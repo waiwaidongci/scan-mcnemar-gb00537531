@@ -7,6 +7,7 @@ from src.domain.analysis import analyze
 from src.domain.spec import SPEC
 from src.models.jobs import Delivery, Run, Schedule
 from src.models.source import Dataset
+from src.services import withdrawals
 from src.services.audit import record
 from src.utils.exports import write_report
 from src.utils.time import now
@@ -58,15 +59,32 @@ def claim():
         job.attempt += 1
         job.lease_until = stamp + timedelta(minutes=3)
         records = db.get(Dataset, job.dataset_id).rows
-        return job.id, job.attempt, records, job.params
+        # 撤回票在每次领取任务时剔除，旧文件重新导入也不会把撤回票算回去。
+        affecting = withdrawals.affecting(records, withdrawals.withdrawn_keys(db))
+        kept, excluded = withdrawals.apply(records, affecting)
+        return job.id, job.attempt, job.revision, kept, job.params, excluded, affecting
+
+
+def _annotate_withdrawal(result, excluded, affecting):
+    result['note'] += f'财务已撤回 {excluded} 张误入验收的票据，本次计算与导出均未计入。'
+    result['metrics'].append({'label': '财务撤回剔除', 'value': excluded,
+                              'detail': '按扫描批次与票据编号认定'})
+    result['tables'].append({
+        'title': '财务撤回票据（未计入）',
+        'columns': [{'key': 'batch_id', 'label': '扫描批次'}, {'key': 'document_id', 'label': '票据编号'}],
+        'rows': [{'batch_id': batch_id, 'document_id': document_id}
+                 for batch_id, document_id in sorted(affecting)],
+    })
 
 
 def execute(lease):
-    job_id, attempt, rows, params = lease
+    job_id, attempt, revision, rows, params, excluded, affecting = lease
     result = export = failure = None
     try:
         result = analyze(rows, params)
-        export = write_report(job_id, attempt, result)
+        if excluded:
+            _annotate_withdrawal(result, excluded, affecting)
+        export = write_report(job_id, revision, result)
     except ValueError as error:
         failure = str(error)[:500]
     except Exception:
@@ -74,15 +92,25 @@ def execute(lease):
         failure = '计算失败，请检查字段口径后重试'
     with Session.begin() as db:
         job = db.get(Run, job_id, with_for_update=True)
-        if job.attempt != attempt or job.status != Status.RUNNING:
+        if job.attempt != attempt or job.revision != revision or job.status != Status.RUNNING:
             return
+        if not failure:
+            current = withdrawals.affecting(db.get(Dataset, job.dataset_id).rows,
+                                            withdrawals.withdrawn_keys(db))
+            if current != affecting:
+                # 计算期间出现新的撤回：结果已过时，重新排队按最新撤回集重算。
+                job.status = Status.QUEUED
+                job.lease_until = None
+                record(db, 'worker', 'analysis.requeued', job.id, revision=revision)
+                return
         job.lease_until = None
         job.finished_at = now()
         job.status = Status.FAILED if failure else Status.COMPLETE
         job.result = None if failure else result
         job.export_file = export
         job.error = failure
-        record(db, 'worker', f'analysis.{job.status}', job.id, attempt=attempt, reason=failure)
+        record(db, 'worker', f'analysis.{job.status}', job.id, attempt=attempt,
+               revision=revision, reason=failure)
         if job.schedule_id:
             plan = db.get(Schedule, job.schedule_id)
             ready = not failure and result.get('ready', True)

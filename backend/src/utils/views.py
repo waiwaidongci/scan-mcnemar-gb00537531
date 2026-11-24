@@ -9,12 +9,18 @@ def dataset(item):
 def run(item, detail=False):
     item_view = {'id': item.id, 'dataset_id': item.dataset_id, 'name': item.name, 'status': item.status,
                  'author': item.author, 'review': item.review, 'decision': item.decision,
+                 'revision': item.revision,
                  'created_at': iso(item.created_at), 'finished_at': iso(item.finished_at),
                  'scheduled_at': iso(item.scheduled_at), 'schedule_id': item.schedule_id,
                  'has_export': bool(item.export_file), 'error': item.error}
     if detail:
         item_view.update(params=item.params, result=item.result, review_note=item.review_note)
     return item_view
+
+
+def withdrawal(item):
+    return {'id': item.id, 'batch_id': item.batch_id, 'document_id': item.document_id,
+            'reason': item.reason, 'actor': item.actor, 'created_at': iso(item.created_at)}
 
 
 def schedule(item):

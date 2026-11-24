@@ -32,8 +32,10 @@ export async function reviewPage(route, refresh) {
     panel(job.name, p(job.result.headline,'intro-copy'), p(job.result.note),
       link('查看计算证据',`#results/${id}`,{class:'quiet'}),
       pill(REVIEW[job.review],job.review),
+      job.revision > 1 && p(`本报告为修订版 r${job.revision}，票据撤回重算后原复核已作废，请重新复核。`,'subtle'),
       job.review_note && el('div',{class:'decision'},p(job.decision),p(job.review_note)),
       job.review === 'pending' && (session.canReview ? reviewForm(job,spec,refresh) : p('等待业务负责人复核。','subtle'))),
     panel('可复核记录', el('ul',{class:'method-list'}, completed.map(run =>
-      el('li',{}, link(run.name,`#review/${run.id}`), ' ', pill(REVIEW[run.review],run.review))))));
+      el('li',{}, link(run.name,`#review/${run.id}`), ' ', pill(REVIEW[run.review],run.review),
+        run.revision > 1 && ` 修订版 r${run.revision}`)))));
 }

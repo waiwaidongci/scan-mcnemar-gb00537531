@@ -9,13 +9,14 @@ def safe_cell(value):
     return value
 
 
-def write_report(run_id, attempt, result):
+def write_report(run_id, revision, result):
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
-    name = f'analysis-{run_id}-{attempt}.csv'
+    name = f'analysis-{run_id}-{revision}.csv'
     path = ARTIFACTS / name
     staging = path.with_suffix('.tmp')
     with staging.open('w', encoding='utf-8-sig', newline='') as output:
         writer = csv.writer(output)
+        writer.writerow(['报告编号', run_id, '修订版', f'r{revision}'])
         writer.writerow([safe_cell(result['headline'])])
         writer.writerow([safe_cell(result.get('note', ''))])
         for metric in result['metrics']:

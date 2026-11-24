@@ -16,3 +16,14 @@ class Dataset(Base):
     row_count: Mapped[int]
     author: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(default=now)
+
+class Withdrawal(Base):
+    __tablename__ = 'withdrawals'
+    __table_args__ = (UniqueConstraint('batch_id', 'document_id'),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(300), index=True)
+    document_id: Mapped[str] = mapped_column(String(300))
+    reason: Mapped[str | None] = mapped_column(String(500))
+    actor: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(default=now)
